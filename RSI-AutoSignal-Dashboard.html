@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSI AutoSignal — Live Trading Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #04070d;
+  --panel: #080e18;
+  --panel2: #0a1220;
+  --green: #00ff9d;
+  --red: #ff2d55;
+  --yellow: #ffcc00;
+  --blue: #00aaff;
+  --purple: #aa66ff;
+  --dim: #1a2840;
+  --muted: #2a4060;
+  --text: #8ab0cc;
+  --bright: #c8e0f0;
+  --mono: 'Share Tech Mono', monospace;
+  --head: 'Orbitron', monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* CRT scanlines */
+body::before {
+  content:'';
+  position:fixed;
+  inset:0;
+  background: repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.06) 3px,rgba(0,0,0,0.06) 4px);
+  pointer-events:none;
+  z-index:9998;
+}
+
+/* Animated grid bg */
+.grid-bg {
+  position: fixed; inset: 0; z-index: 0;
+  background-image:
+    linear-gradient(rgba(0,255,157,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,255,157,0.025) 1px, transparent 1px);
+  background-size: 48px 48px;
+  animation: gridshift 20s linear infinite;
+}
+@keyframes gridshift { from{background-position:0 0} to{background-position:48px 48px} }
+
+.wrap { position:relative; z-index:1; max-width:1100px; margin:0 auto; padding:24px 16px 60px; }
+
+/* ── TOP BAR ── */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.logo {
+  font-family: var(--head);
+  font-size: clamp(14px, 3vw, 22px);
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 2px;
+}
+.logo span { color: var(--green); }
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+
+.live-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: livepulse 1.5s ease-in-out infinite;
+}
+@keyframes livepulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.8)} }
+
+.live-dot.dead { background: var(--muted); box-shadow: none; animation: none; }
+
+#clock { color: var(--blue); }
+#next-refresh { color: var(--muted); }
+
+/* ── API KEY SETUP ── */
+.setup-panel {
+  background: var(--panel);
+  border: 1px solid rgba(0,255,157,0.15);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.setup-title {
+  font-family: var(--head);
+  font-size: 11px;
+  color: var(--green);
+  letter-spacing: 3px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setup-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.inp {
+  flex: 1;
+  min-width: 200px;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--muted);
+  color: var(--bright);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 10px 14px;
+  border-radius: 5px;
+  outline: none;
+  transition: border 0.2s;
+}
+.inp:focus { border-color: var(--green); }
+.inp::placeholder { color: var(--muted); }
+
+.btn {
+  background: rgba(0,255,157,0.1);
+  border: 1px solid var(--green);
+  color: var(--green);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 2px;
+  padding: 10px 18px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn:hover { background: rgba(0,255,157,0.2); box-shadow: 0 0 16px rgba(0,255,157,0.2); }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.btn.red { border-color: var(--red); color: var(--red); background: rgba(255,45,85,0.08); }
+.btn.red:hover { background: rgba(255,45,85,0.18); }
+
+.setup-note {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 10px;
+  line-height: 1.7;
+}
+.setup-note a { color: var(--blue); text-decoration: none; }
+.setup-note a:hover { text-decoration: underline; }
+
+/* ── CONTROLS ── */
+.controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.ctrl-group { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.ctrl-label {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 2px;
+  align-self: center;
+  margin-right: 4px;
+}
+
+.tf-btn {
+  background: var(--panel2);
+  border: 1px solid var(--dim);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  padding: 7px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tf-btn:hover { border-color: var(--blue); color: var(--blue); }
+.tf-btn.active { border-color: var(--green); color: var(--green); background: rgba(0,255,157,0.08); }
+
+/* ── SIGNAL GRID ── */
+.signal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.asset-card {
+  background: var(--panel);
+  border: 1px solid var(--dim);
+  border-radius: 10px;
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.3s, box-shadow 0.3s;
+  cursor: pointer;
+}
+.asset-card:hover { border-color: var(--muted); }
+.asset-card.signal-buy { border-color: rgba(0,255,157,0.5); box-shadow: 0 0 24px rgba(0,255,157,0.1); }
+.asset-card.signal-sell { border-color: rgba(255,45,85,0.5); box-shadow: 0 0 24px rgba(255,45,85,0.1); }
+.asset-card.signal-wait { border-color: rgba(255,204,0,0.3); }
+
+.card-glow {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.4s;
+  pointer-events: none;
+}
+.signal-buy .card-glow { background: radial-gradient(ellipse at top left, rgba(0,255,157,0.06), transparent 70%); opacity: 1; }
+.signal-sell .card-glow { background: radial-gradient(ellipse at top left, rgba(255,45,85,0.06), transparent 70%); opacity: 1; }
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.asset-name {
+  font-family: var(--head);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--bright);
+  letter-spacing: 2px;
+}
+
+.asset-price {
+  font-size: 13px;
+  color: var(--blue);
+  text-align: right;
+}
+
+.price-change {
+  font-size: 10px;
+  margin-top: 2px;
+}
+.price-change.up { color: var(--green); }
+.price-change.down { color: var(--red); }
+
+/* Signal badge */
+.sig-badge {
+  display: inline-block;
+  font-family: var(--head);
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  padding: 6px 14px;
+  border-radius: 5px;
+  margin-bottom: 12px;
+}
+.sig-badge.BUY { color: var(--green); background: rgba(0,255,157,0.1); border: 1px solid rgba(0,255,157,0.3); }
+.sig-badge.SELL { color: var(--red); background: rgba(255,45,85,0.1); border: 1px solid rgba(255,45,85,0.3); }
+.sig-badge.WAIT { color: var(--yellow); background: rgba(255,204,0,0.08); border: 1px solid rgba(255,204,0,0.25); }
+.sig-badge.NO_TRADE { color: var(--muted); background: rgba(42,64,96,0.3); border: 1px solid var(--dim); }
+.sig-badge.LOADING { color: var(--muted); background: transparent; border: 1px solid var(--dim); font-size: 12px; animation: pulse2 1s ease-in-out infinite; }
+@keyframes pulse2 { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* RSI meter */
+.rsi-meters { margin-bottom: 10px; }
+
+.meter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.meter-label { font-size: 9px; color: var(--muted); letter-spacing: 1px; width: 38px; flex-shrink: 0; }
+
+.meter-track {
+  flex: 1;
+  height: 4px;
+  background: var(--dim);
+  border-radius: 2px;
+  overflow: visible;
+  position: relative;
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.6s ease;
+  position: relative;
+}
+
+.meter-thumb {
+  position: absolute;
+  right: -1px;
+  top: -3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--bg);
+}
+
+/* Level markers on meter */
+.meter-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.meter-mark {
+  position: absolute;
+  top: -4px;
+  width: 1px;
+  height: 12px;
+  background: rgba(255,255,255,0.1);
+}
+
+.meter-val { font-size: 10px; color: var(--bright); width: 32px; text-align: right; flex-shrink: 0; }
+
+/* Layer status row */
+.layer-status {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.ls-item {
+  background: var(--panel2);
+  border-radius: 4px;
+  padding: 5px 6px;
+  text-align: center;
+}
+.ls-num { font-size: 8px; color: var(--muted); letter-spacing: 1px; }
+.ls-val { font-size: 10px; margin-top: 2px; }
+
+/* Trade levels */
+.trade-levels {
+  border-top: 1px solid var(--dim);
+  padding-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+}
+.tl-item { text-align: center; }
+.tl-label { font-size: 8px; letter-spacing: 1px; margin-bottom: 3px; }
+.tl-val { font-size: 10px; color: var(--bright); }
+
+/* Confidence dots */
+.conf-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.conf-label { font-size: 9px; color: var(--muted); letter-spacing: 1px; }
+.conf-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+/* Last updated */
+.last-update { font-size: 9px; color: var(--muted); text-align: right; }
+
+/* ── ALERT LOG ── */
+.alert-section { margin-top: 20px; }
+
+.section-title {
+  font-family: var(--head);
+  font-size: 11px;
+  color: var(--green);
+  letter-spacing: 3px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.alert-log {
+  background: var(--panel);
+  border: 1px solid var(--dim);
+  border-radius: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.alert-log::-webkit-scrollbar { width: 4px; }
+.alert-log::-webkit-scrollbar-track { background: transparent; }
+.alert-log::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
+
+.alert-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  animation: alertslide 0.3s ease;
+}
+@keyframes alertslide { from{opacity:0;transform:translateX(-10px)} to{opacity:1;transform:none} }
+.alert-item:last-child { border-bottom: none; }
+
+.alert-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.alert-time { font-size: 10px; color: var(--muted); flex-shrink: 0; }
+.alert-text { font-size: 12px; flex: 1; }
+.alert-empty { padding: 20px; text-align: center; font-size: 12px; color: var(--muted); }
+
+/* ── FLASH ALERT OVERLAY ── */
+.flash-alert {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9997;
+  max-width: 320px;
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 16px 20px;
+  transform: translateX(400px);
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+}
+.flash-alert.show { transform: translateX(0); pointer-events: auto; }
+.flash-alert.buy-flash { border: 1px solid var(--green); box-shadow: 0 0 30px rgba(0,255,157,0.25); }
+.flash-alert.sell-flash { border: 1px solid var(--red); box-shadow: 0 0 30px rgba(255,45,85,0.25); }
+.fa-header { font-family: var(--head); font-size: 10px; letter-spacing: 3px; margin-bottom: 8px; }
+.fa-signal { font-family: var(--head); font-size: 28px; font-weight: 900; margin-bottom: 4px; }
+.fa-detail { font-size: 11px; color: var(--text); }
+
+/* ── ERROR TOAST ── */
+.err-toast {
+  position: fixed;
+  bottom: 20px; left: 50%; transform: translateX(-50%) translateY(80px);
+  background: rgba(255,45,85,0.15);
+  border: 1px solid rgba(255,45,85,0.4);
+  color: var(--red);
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 12px;
+  z-index: 9997;
+  transition: transform 0.3s;
+  white-space: nowrap;
+  max-width: 90vw;
+  text-align: center;
+}
+.err-toast.show { transform: translateX(-50%) translateY(0); }
+
+@media(max-width:600px) {
+  .signal-grid { grid-template-columns: 1fr; }
+  .controls { gap: 6px; }
+  .topbar { flex-direction: column; align-items: flex-start; }
+}
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+
+<div class="wrap">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="logo">RSI<span>.</span>AUTO<span>SIGNAL</span></div>
+    <div class="status-bar">
+      <div class="live-dot dead" id="live-dot"></div>
+      <span id="live-label" style="color:var(--muted)">OFFLINE</span>
+      <span id="clock" style="color:var(--muted)">--:--:--</span>
+      <span id="next-refresh"></span>
+    </div>
+  </div>
+
+  <!-- API KEY SETUP -->
+  <div class="setup-panel" id="setup-panel">
+    <div class="setup-title">
+      <span style="width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block"></span>
+      FREE API KEY REQUIRED (ONE-TIME SETUP)
+    </div>
+    <div class="setup-row">
+      <input type="password" id="api-key" class="inp" placeholder="sk-ant-api03-xxxx  (Anthropic API key)" autocomplete="off" />
+      <button class="btn" onclick="saveAndStart()">START LIVE</button>
+    </div>
+    <div class="setup-note">
+      1. Get a <b>free</b> key at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> &nbsp;·&nbsp;
+      2. Paste it above &nbsp;·&nbsp; 3. Click START LIVE &nbsp;·&nbsp; Key saved in browser, never shared.<br>
+      Market data from <b>Twelve Data</b> (free tier, no signup needed for basic use).
+    </div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls" id="controls" style="display:none">
+    <span class="ctrl-label">TIMEFRAME</span>
+    <div class="ctrl-group" id="tf-group">
+      <button class="tf-btn" onclick="setTF('1min')">M1</button>
+      <button class="tf-btn" onclick="setTF('5min')">M5</button>
+      <button class="tf-btn active" onclick="setTF('15min')">M15</button>
+      <button class="tf-btn" onclick="setTF('30min')">M30</button>
+      <button class="tf-btn" onclick="setTF('1h')">H1</button>
+      <button class="tf-btn" onclick="setTF('4h')">H4</button>
+    </div>
+    <div style="flex:1"></div>
+    <button class="btn" onclick="forceRefresh()" id="refresh-btn">↻ REFRESH</button>
+    <button class="btn red" onclick="stopLive()">■ STOP</button>
+  </div>
+
+  <!-- SIGNAL CARDS -->
+  <div class="signal-grid" id="signal-grid">
+    <!-- filled by JS -->
+  </div>
+
+  <!-- ALERT LOG -->
+  <div class="alert-section">
+    <div class="section-title">
+      <span>▸</span> SIGNAL ALERTS LOG
+      <button class="tf-btn" onclick="clearAlerts()" style="font-size:9px;padding:4px 10px;margin-left:auto">CLEAR</button>
+    </div>
+    <div class="alert-log" id="alert-log">
+      <div class="alert-empty" id="log-empty">No signals yet — waiting for live data...</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FLASH ALERT -->
+<div class="flash-alert" id="flash-alert">
+  <div class="fa-header" id="fa-header">NEW SIGNAL</div>
+  <div class="fa-signal" id="fa-signal">BUY</div>
+  <div class="fa-detail" id="fa-detail"></div>
+</div>
+
+<!-- ERROR TOAST -->
+<div class="err-toast" id="err-toast"></div>
+
+<script>
+// ─────────────────────────────────────────────
+//  CONFIG
+// ─────────────────────────────────────────────
+const ASSETS = [
+  { id: 'XAUUSD', symbol: 'XAU/USD', tdSymbol: 'XAU/USD', label: 'GOLD' },
+  { id: 'EURUSD', symbol: 'EUR/USD', tdSymbol: 'EUR/USD', label: 'EUR/USD' },
+  { id: 'US30',   symbol: 'US30',    tdSymbol: 'DJI',     label: 'US30' },
+  { id: 'NAS100', symbol: 'NAS100',  tdSymbol: 'IXIC',    label: 'NAS100' },
+];
+
+const TF_MAP = { '1min':1, '5min':5, '15min':15, '30min':30, '1h':60, '4h':240 };
+
+// Twelve Data free API (no key needed for basic)
+const TD_BASE = 'https://api.twelvedata.com';
+// Free proxied CORS endpoint
+const CORS = 'https://corsproxy.io/?';
+
+let apiKey = '';
+let currentTF = '15min';
+let refreshInterval = null;
+let countdownInterval = null;
+let nextRefreshIn = 0;
+let isRunning = false;
+let alertLog = [];
+let prevSignals = {};
+
+// ─────────────────────────────────────────────
+//  INIT
+// ─────────────────────────────────────────────
+window.onload = () => {
+  const saved = localStorage.getItem('rsi_api_key');
+  if (saved) {
+    document.getElementById('api-key').value = saved;
+    apiKey = saved;
+  }
+  buildCards();
+  startClock();
+};
+
+function buildCards() {
+  const grid = document.getElementById('signal-grid');
+  grid.innerHTML = ASSETS.map(a => `
+    <div class="asset-card" id="card-${a.id}">
+      <div class="card-glow"></div>
+      <div class="card-header">
+        <div>
+          <div class="asset-name">${a.label}</div>
+          <div style="font-size:10px;color:var(--muted);letter-spacing:1px">${a.symbol}</div>
+        </div>
+        <div>
+          <div class="asset-price" id="price-${a.id}">---</div>
+          <div class="price-change" id="pchg-${a.id}"></div>
+        </div>
+      </div>
+      <div class="sig-badge LOADING" id="sig-${a.id}">LOADING...</div>
+      <div class="conf-row" id="conf-${a.id}" style="display:none">
+        <span class="conf-label">CONF</span>
+        <div class="conf-dot" id="cd1-${a.id}"></div>
+        <div class="conf-dot" id="cd2-${a.id}"></div>
+        <div class="conf-dot" id="cd3-${a.id}"></div>
+      </div>
+      <div class="rsi-meters" id="meters-${a.id}">
+        <div class="meter-row">
+          <span class="meter-label">RSI(14)</span>
+          <div class="meter-track">
+            <div class="meter-fill" id="mf-rsi14-${a.id}" style="width:50%;background:var(--purple)">
+              <div class="meter-thumb" style="background:var(--purple)"></div>
+            </div>
+            <div class="meter-mark" style="left:50%"></div>
+            <div class="meter-mark" style="left:30%"></div>
+            <div class="meter-mark" style="left:70%"></div>
+          </div>
+          <span class="meter-val" id="mv-rsi14-${a.id}">50</span>
+        </div>
+        <div class="meter-row">
+          <span class="meter-label">EMA14</span>
+          <div class="meter-track">
+            <div class="meter-fill" id="mf-ema14-${a.id}" style="width:50%;background:var(--blue)">
+              <div class="meter-thumb" style="background:var(--blue)"></div>
+            </div>
+            <div class="meter-mark" style="left:10%"></div>
+            <div class="meter-mark" style="left:15%"></div>
+            <div class="meter-mark" style="left:85%"></div>
+            <div class="meter-mark" style="left:90%"></div>
+          </div>
+          <span class="meter-val" id="mv-ema14-${a.id}">50</span>
+        </div>
+        <div class="meter-row">
+          <span class="meter-label">EMA25</span>
+          <div class="meter-track">
+            <div class="meter-fill" id="mf-ema25-${a.id}" style="width:50%;background:var(--purple)">
+              <div class="meter-thumb" style="background:var(--purple)"></div>
+            </div>
+          </div>
+          <span class="meter-val" id="mv-ema25-${a.id}">50</span>
+        </div>
+      </div>
+      <div class="layer-status">
+        <div class="ls-item"><div class="ls-num">L1 RSI1</div><div class="ls-val" id="l1-${a.id}" style="color:var(--muted)">—</div></div>
+        <div class="ls-item"><div class="ls-num">L2 CROSS</div><div class="ls-val" id="l2-${a.id}" style="color:var(--muted)">—</div></div>
+        <div class="ls-item"><div class="ls-num">L3 GATE</div><div class="ls-val" id="l3-${a.id}" style="color:var(--muted)">—</div></div>
+      </div>
+      <div class="trade-levels" id="levels-${a.id}" style="display:none">
+        <div class="tl-item"><div class="tl-label" style="color:var(--blue)">ENTRY</div><div class="tl-val" id="tl-en-${a.id}">—</div></div>
+        <div class="tl-item"><div class="tl-label" style="color:var(--green)">TP</div><div class="tl-val" id="tl-tp-${a.id}">—</div></div>
+        <div class="tl-item"><div class="tl-label" style="color:var(--red)">SL</div><div class="tl-val" id="tl-sl-${a.id}">—</div></div>
+      </div>
+      <div class="last-update" id="upd-${a.id}" style="margin-top:8px"></div>
+    </div>
+  `).join('');
+}
+
+function startClock() {
+  setInterval(() => {
+    document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-GB');
+  }, 1000);
+}
+
+// ─────────────────────────────────────────────
+//  SETUP & CONTROL
+// ─────────────────────────────────────────────
+function saveAndStart() {
+  const k = document.getElementById('api-key').value.trim();
+  if (!k) { showErr('Please enter your Anthropic API key'); return; }
+  apiKey = k;
+  localStorage.setItem('rsi_api_key', k);
+  document.getElementById('setup-panel').style.display = 'none';
+  document.getElementById('controls').style.display = 'flex';
+  startLive();
+}
+
+function startLive() {
+  if (isRunning) return;
+  isRunning = true;
+  setLiveDot(true);
+  fetchAll();
+  scheduleNext();
+}
+
+function stopLive() {
+  isRunning = false;
+  clearInterval(refreshInterval);
+  clearInterval(countdownInterval);
+  document.getElementById('next-refresh').textContent = '';
+  setLiveDot(false);
+}
+
+function forceRefresh() {
+  clearInterval(refreshInterval);
+  clearInterval(countdownInterval);
+  fetchAll();
+  scheduleNext();
+}
+
+function scheduleNext() {
+  const secs = TF_MAP[currentTF] * 60;
+  nextRefreshIn = secs;
+  countdownInterval = setInterval(() => {
+    nextRefreshIn--;
+    if (nextRefreshIn <= 0) nextRefreshIn = 0;
+    document.getElementById('next-refresh').textContent = `↻ ${fmtCountdown(nextRefreshIn)}`;
+  }, 1000);
+  refreshInterval = setInterval(() => {
+    clearInterval(countdownInterval);
+    fetchAll();
+    scheduleNext();
+  }, secs * 1000);
+}
+
+function fmtCountdown(s) {
+  const m = Math.floor(s / 60), ss = s % 60;
+  return `${m}:${String(ss).padStart(2,'0')}`;
+}
+
+function setTF(tf) {
+  currentTF = tf;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  clearInterval(refreshInterval);
+  clearInterval(countdownInterval);
+  if (isRunning) { fetchAll(); scheduleNext(); }
+}
+
+function setLiveDot(on) {
+  const dot = document.getElementById('live-dot');
+  const lbl = document.getElementById('live-label');
+  if (on) {
+    dot.classList.remove('dead');
+    lbl.style.color = 'var(--green)';
+    lbl.textContent = 'LIVE';
+  } else {
+    dot.classList.add('dead');
+    lbl.style.color = 'var(--muted)';
+    lbl.textContent = 'OFFLINE';
+  }
+}
+
+// ─────────────────────────────────────────────
+//  DATA FETCH
+// ─────────────────────────────────────────────
+async function fetchAll() {
+  for (const asset of ASSETS) {
+    try {
+      await fetchAsset(asset);
+    } catch(e) {
+      console.warn(asset.id, e.message);
+    }
+    await sleep(300); // avoid rate limit
+  }
+}
+
+async function fetchAsset(asset) {
+  // Twelve Data free endpoint - no key needed for basic symbols
+  const url = `${TD_BASE}/time_series?symbol=${encodeURIComponent(asset.tdSymbol)}&interval=${currentTF}&outputsize=60&format=JSON`;
+
+  let data;
+  try {
+    const resp = await fetch(CORS + encodeURIComponent(url));
+    data = await resp.json();
+  } catch(e) {
+    // Try without CORS proxy
+    const resp2 = await fetch(url);
+    data = await resp2.json();
+  }
+
+  if (!data || !data.values || !Array.isArray(data.values) || data.values.length < 30) {
+    throw new Error('Insufficient data for ' + asset.id);
+  }
+
+  // Twelve Data returns newest first - reverse to oldest first
+  const candles = data.values.slice().reverse();
+  const result = calculateSignal(candles, asset);
+  renderCard(asset, result, candles);
+  checkAndAlert(asset, result);
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ─────────────────────────────────────────────
+//  RSI CALCULATIONS
+// ─────────────────────────────────────────────
+function calculateSignal(candles, asset) {
+  const closes = candles.map(c => parseFloat(c.close));
+  const highs   = candles.map(c => parseFloat(c.high));
+  const lows    = candles.map(c => parseFloat(c.low));
+
+  // ── LAYER 1: RSI(1) values (binary: 100 or 0)
+  const rsi1vals = calcRSI1(closes);
+
+  // ── LAYER 2: EMA14 & EMA25 on RSI(1)
+  const ema14vals = calcEMA(rsi1vals, 14);
+  const ema25vals = calcEMA(rsi1vals, 25);
+
+  // ── LAYER 3: RSI(14) on Typical Price
+  const typicalPrices = candles.map((c,i) => (parseFloat(c.high) + parseFloat(c.low) + parseFloat(c.close)) / 3);
+  const rsi14vals = calcRSI(typicalPrices, 14);
+
+  const n = Math.min(rsi1vals.length, ema14vals.length, ema25vals.length, rsi14vals.length) - 1;
+
+  // Current values
+  const rsi1  = rsi1vals[n];
+  const ema14 = ema14vals[n];
+  const ema25 = ema25vals[n];
+  const rsi14 = rsi14vals[n];
+  const prevEma14 = ema14vals[n-1] || ema14;
+  const prevEma25 = ema25vals[n-1] || ema25;
+
+  const currentPrice = closes[closes.length - 1];
+  const prevPrice = closes[closes.length - 2] || currentPrice;
+
+  // ── Determine cross type
+  const nowBullish = ema14 > ema25;
+  const wasBullish = prevEma14 > prevEma25;
+  let crossType = 'NONE';
+  if (!wasBullish && nowBullish) crossType = 'BULLISH_CROSS';
+  else if (wasBullish && !nowBullish) crossType = 'BEARISH_CROSS';
+  else if (Math.abs(ema14 - ema25) < 2) crossType = 'NEAR_CROSS';
+
+  // ── EMA location
+  let emaLocation = 'NEUTRAL';
+  const emaAvg = (ema14 + ema25) / 2;
+  if (emaAvg <= 15) emaLocation = 'BUY_ENTRY';
+  else if (emaAvg >= 85) emaLocation = 'SELL_ENTRY';
+
+  // ── Layer 3: Gate
+  // YOUR LOGIC: RSI14 < 50 = BULLISH, RSI14 > 50 = BEARISH
+  const trend = rsi14 < 50 ? 'BULLISH' : 'BEARISH';
+  const gate = rsi14 < 50 ? 'OPEN_BUYS' : 'OPEN_SELLS';
+
+  // ── FINAL SIGNAL
+  let action = 'WAIT';
+  let confidence = 1; // 1=LOW 2=MED 3=HIGH
+  let entry = '', tp = '', sl = '';
+
+  // BUY: bullish cross at buy entry zone, gate open for buys
+  if (crossType === 'BULLISH_CROSS' && emaLocation === 'BUY_ENTRY' && trend === 'BULLISH') {
+    action = 'BUY';
+    entry = fmtPrice(currentPrice, asset.id);
+    tp = `RSI 85 zone (~${fmtPrice(currentPrice * 1.003, asset.id)})`;
+    sl = fmtPrice(Math.min(...lows.slice(-5)), asset.id);
+    confidence = rsi14 < 30 ? 3 : 2;
+  }
+  // SELL: bearish cross at sell entry zone, gate open for sells
+  else if (crossType === 'BEARISH_CROSS' && emaLocation === 'SELL_ENTRY' && trend === 'BEARISH') {
+    action = 'SELL';
+    entry = fmtPrice(currentPrice, asset.id);
+    tp = `RSI 15 zone (~${fmtPrice(currentPrice * 0.997, asset.id)})`;
+    sl = fmtPrice(Math.max(...highs.slice(-5)), asset.id);
+    confidence = rsi14 > 70 ? 3 : 2;
+  }
+  // FORMING signals
+  else if (emaLocation === 'BUY_ENTRY' && trend === 'BULLISH' && !nowBullish) {
+    action = 'WAIT';
+    // near cross = stronger wait
+    if (crossType === 'NEAR_CROSS') confidence = 2;
+  }
+  else if (emaLocation === 'SELL_ENTRY' && trend === 'BEARISH' && nowBullish) {
+    action = 'WAIT';
+    if (crossType === 'NEAR_CROSS') confidence = 2;
+  }
+  else {
+    action = 'NO_TRADE';
+    confidence = 1;
+  }
+
+  return {
+    action, confidence, entry, tp, sl,
+    rsi1: Math.round(rsi1),
+    ema14: Math.round(ema14 * 10) / 10,
+    ema25: Math.round(ema25 * 10) / 10,
+    rsi14: Math.round(rsi14 * 10) / 10,
+    trend, gate, emaLocation, crossType,
+    currentPrice,
+    prevPrice,
+    emaRelation: nowBullish ? 'BULL' : 'BEAR',
+    emaAvg
+  };
+}
+
+// RSI(1) - binary
+function calcRSI1(closes) {
+  return closes.map((c, i) => {
+    if (i === 0) return 50;
+    return c > closes[i-1] ? 100 : c < closes[i-1] ? 0 : 50;
+  });
+}
+
+// Standard RSI(period)
+function calcRSI(prices, period) {
+  const result = new Array(prices.length).fill(50);
+  if (prices.length < period + 1) return result;
+
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = prices[i] - prices[i-1];
+    if (diff > 0) gains += diff; else losses -= diff;
+  }
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+
+  for (let i = period; i < prices.length; i++) {
+    if (i > period) {
+      const diff = prices[i] - prices[i-1];
+      avgGain = (avgGain * (period-1) + Math.max(diff, 0)) / period;
+      avgLoss = (avgLoss * (period-1) + Math.max(-diff, 0)) / period;
+    }
+    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    result[i] = 100 - 100 / (1 + rs);
+  }
+  return result;
+}
+
+// EMA(period) on any array
+function calcEMA(values, period) {
+  const k = 2 / (period + 1);
+  const result = [...values];
+  for (let i = 1; i < values.length; i++) {
+    result[i] = values[i] * k + result[i-1] * (1-k);
+  }
+  return result;
+}
+
+// ─────────────────────────────────────────────
+//  RENDER
+// ─────────────────────────────────────────────
+function renderCard(asset, r, candles) {
+  const id = asset.id;
+
+  // Card class
+  const card = document.getElementById(`card-${id}`);
+  card.className = 'asset-card ' + (r.action === 'BUY' ? 'signal-buy' : r.action === 'SELL' ? 'signal-sell' : r.action === 'WAIT' ? 'signal-wait' : '');
+
+  // Price
+  const priceEl = document.getElementById(`price-${id}`);
+  priceEl.textContent = fmtPrice(r.currentPrice, id);
+  priceEl.style.color = r.currentPrice >= r.prevPrice ? 'var(--green)' : 'var(--red)';
+
+  const pchg = ((r.currentPrice - r.prevPrice) / r.prevPrice * 100);
+  const pchgEl = document.getElementById(`pchg-${id}`);
+  pchgEl.textContent = (pchg >= 0 ? '▲' : '▼') + ' ' + Math.abs(pchg).toFixed(3) + '%';
+  pchgEl.className = 'price-change ' + (pchg >= 0 ? 'up' : 'down');
+
+  // Signal badge
+  const sigEl = document.getElementById(`sig-${id}`);
+  sigEl.className = 'sig-badge ' + r.action;
+  sigEl.textContent = r.action === 'NO_TRADE' ? 'NO TRADE' : r.action;
+
+  // Confidence
+  const confRow = document.getElementById(`conf-${id}`);
+  confRow.style.display = r.action !== 'NO_TRADE' ? 'flex' : 'none';
+  const color = r.action === 'BUY' ? 'var(--green)' : r.action === 'SELL' ? 'var(--red)' : 'var(--yellow)';
+  [1,2,3].forEach(i => {
+    const d = document.getElementById(`cd${i}-${id}`);
+    d.style.background = i <= r.confidence ? color : 'var(--dim)';
+  });
+
+  // Meters
+  setMeter(`mf-rsi14-${id}`, `mv-rsi14-${id}`, r.rsi14, 'var(--purple)');
+  setMeter(`mf-ema14-${id}`, `mv-ema14-${id}`, r.ema14, 'var(--blue)');
+  setMeter(`mf-ema25-${id}`, `mv-ema25-${id}`, r.ema25, 'var(--purple)');
+
+  // Layer status
+  const rsi14col = r.rsi14 < 30 ? 'var(--green)' : r.rsi14 > 70 ? 'var(--red)' : r.rsi14 < 50 ? 'var(--green)' : 'var(--red)';
+  document.getElementById(`l1-${id}`).textContent = r.rsi1;
+  document.getElementById(`l1-${id}`).style.color = r.rsi1 <= 15 ? 'var(--green)' : r.rsi1 >= 85 ? 'var(--red)' : 'var(--muted)';
+
+  const crossLabel = r.crossType === 'BULLISH_CROSS' ? '↑BUY' : r.crossType === 'BEARISH_CROSS' ? '↓SELL' : r.crossType === 'NEAR_CROSS' ? '≈NEAR' : r.emaRelation === 'BULL' ? '▲BULL' : '▼BEAR';
+  const crossCol = r.crossType === 'BULLISH_CROSS' ? 'var(--green)' : r.crossType === 'BEARISH_CROSS' ? 'var(--red)' : r.crossType === 'NEAR_CROSS' ? 'var(--yellow)' : 'var(--muted)';
+  document.getElementById(`l2-${id}`).textContent = crossLabel;
+  document.getElementById(`l2-${id}`).style.color = crossCol;
+
+  document.getElementById(`l3-${id}`).textContent = r.trend === 'BULLISH' ? '✓BUY' : '✓SELL';
+  document.getElementById(`l3-${id}`).style.color = r.trend === 'BULLISH' ? 'var(--green)' : 'var(--red)';
+
+  // Trade levels
+  const levelsEl = document.getElementById(`levels-${id}`);
+  if (r.action === 'BUY' || r.action === 'SELL') {
+    levelsEl.style.display = 'grid';
+    document.getElementById(`tl-en-${id}`).textContent = r.entry;
+    document.getElementById(`tl-tp-${id}`).textContent = r.tp;
+    document.getElementById(`tl-sl-${id}`).textContent = r.sl;
+  } else {
+    levelsEl.style.display = 'none';
+  }
+
+  // Last update
+  document.getElementById(`upd-${id}`).textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB');
+}
+
+function setMeter(fillId, valId, val, color) {
+  const pct = Math.min(Math.max(val, 0), 100);
+  const fill = document.getElementById(fillId);
+  const valEl = document.getElementById(valId);
+  if (!fill || !valEl) return;
+  fill.style.width = pct + '%';
+  fill.style.background = color;
+  fill.querySelector('.meter-thumb').style.background = color;
+  valEl.textContent = pct.toFixed(1);
+}
+
+function fmtPrice(p, id) {
+  if (!p) return '—';
+  if (id === 'EURUSD') return p.toFixed(5);
+  if (id === 'XAUUSD') return p.toFixed(2);
+  return p.toFixed(2);
+}
+
+// ─────────────────────────────────────────────
+//  ALERTS
+// ─────────────────────────────────────────────
+function checkAndAlert(asset, r) {
+  if (r.action !== 'BUY' && r.action !== 'SELL') return;
+  const prev = prevSignals[asset.id];
+  // Only alert on NEW signal (not same consecutive signal)
+  if (prev === r.action + r.crossType) return;
+  prevSignals[asset.id] = r.action + r.crossType;
+
+  const time = new Date().toLocaleTimeString('en-GB');
+  const confText = r.confidence === 3 ? 'HIGH' : r.confidence === 2 ? 'MODERATE' : 'LOW';
+  const msg = `${asset.label} ${r.action} — RSI14: ${r.rsi14} | EMA: ${r.crossType} | Conf: ${confText}`;
+
+  addAlert(r.action, time, msg);
+  showFlash(asset, r);
+  playBeep(r.action);
+}
+
+function addAlert(type, time, text) {
+  const log = document.getElementById('alert-log');
+  const empty = document.getElementById('log-empty');
+  if (empty) empty.remove();
+
+  const item = document.createElement('div');
+  item.className = 'alert-item';
+  const color = type === 'BUY' ? 'var(--green)' : type === 'SELL' ? 'var(--red)' : 'var(--yellow)';
+  item.innerHTML = `
+    <div class="alert-dot" style="background:${color}"></div>
+    <div class="alert-time">${time}</div>
+    <div class="alert-text" style="color:${color}">${text}</div>
+  `;
+  log.insertBefore(item, log.firstChild);
+}
+
+function showFlash(asset, r) {
+  const el = document.getElementById('flash-alert');
+  const color = r.action === 'BUY' ? 'var(--green)' : 'var(--red)';
+  el.className = 'flash-alert show ' + (r.action === 'BUY' ? 'buy-flash' : 'sell-flash');
+  document.getElementById('fa-header').textContent = `${asset.label} · ${currentTF.toUpperCase()}`;
+  document.getElementById('fa-header').style.color = color;
+  document.getElementById('fa-signal').textContent = r.action;
+  document.getElementById('fa-signal').style.color = color;
+  document.getElementById('fa-detail').textContent = `RSI14: ${r.rsi14} | EMA: ${r.ema14} vs ${r.ema25} | Conf: ${r.confidence === 3 ? '●●●' : r.confidence === 2 ? '●●○' : '●○○'}`;
+  setTimeout(() => el.classList.remove('show'), 6000);
+}
+
+function playBeep(type) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = type === 'BUY' ? 880 : 440;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.4);
+  } catch(e) {}
+}
+
+function clearAlerts() {
+  const log = document.getElementById('alert-log');
+  log.innerHTML = '<div class="alert-empty" id="log-empty">Alerts cleared. Watching for new signals...</div>';
+}
+
+// ─────────────────────────────────────────────
+//  ERROR
+// ─────────────────────────────────────────────
+function showErr(msg) {
+  const el = document.getElementById('err-toast');
+  el.textContent = '⚠  ' + msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 4000);
+}
+</script>
+</body>
+</html>
